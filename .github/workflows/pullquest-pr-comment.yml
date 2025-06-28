@@ -15,6 +15,7 @@ jobs:
       pull-requests: write       # needed only if you later update the PR status
     env:
       BACKEND_URL: https://pullquestgithubbackend.onrender.com
+      OPENAI_API_KEY: pullquesttestzx7tehs
     steps:
       - name: Debug – print event info
         run: |
@@ -25,6 +26,7 @@ jobs:
           echo "🔍 Repo      : ${{ github.event.repository.full_name }}"
       
       - name: Build payload ➜ POST to backend
+        id: pullquest-notify
         run: |
           NUMBER=${{ github.event.pull_request.number }}
           AUTHOR=${{ github.event.pull_request.user.login }}
@@ -42,14 +44,25 @@ jobs:
             '{owner:$owner, repo:$repo, prNumber:$prNumber, author:$author, description:$desc, labels:$labels}')
           echo "📦 Payload:"
           echo "$payload"
-          response=$(curl --fail --show-error --silent \
+          
+          # Make request with better error handling
+          if response=$(curl --fail --show-error --silent \
             -X POST "$BACKEND_URL/api/comment/PullRequest" \
             -H "Content-Type: application/json" \
             --data-raw "$payload" \
-            -w '\nHTTP %{http_code}\n' )
-          echo "🔍 Response: $response"
+            -w '\nHTTP %{http_code}\n' 2>&1); then
+            echo "🔍 Response: $response"
+            echo "pullquest_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ PullQuest notification failed: $response"
+            echo "pullquest_success=false" >> $GITHUB_OUTPUT
+            # Don't fail the entire workflow, just log the error
+          fi
       
       - name: Generate PR Summary ➜ POST to backend
+        id: pr-summary
+        # Only run if it's a new PR or reopened (not on every sync)
+        if: github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'ready_for_review'
         run: |
           NUMBER=${{ github.event.pull_request.number }}
           TITLE="${{ github.event.pull_request.title }}"
@@ -64,21 +77,78 @@ jobs:
             --arg title  "$TITLE" \
             --arg desc   "$DESCRIPTION" \
             --argjson prNumber "$NUMBER" \
-            --arg openaiApiKey "pullquesttestzx7tehs" \
+            --arg openaiApiKey "$OPENAI_API_KEY" \
             '{owner:$owner, repo:$repo, prNumber:$prNumber, title:$title, description:$desc, openaiApiKey:$openaiApiKey}')
           
           echo "📦 Summary Payload:"
           echo "$summary_payload"
           
-          summary_response=$(curl --fail --show-error --silent \
+          # Make request with better error handling
+          if summary_response=$(curl --fail --show-error --silent \
             -X POST "$BACKEND_URL/api/github/generate-pr-summary" \
             -H "Content-Type: application/json" \
             --data-raw "$summary_payload" \
-            -w '\nHTTP %{http_code}\n' )
-          
-          echo "🔍 Summary Response: $summary_response"
+            -w '\nHTTP %{http_code}\n' 2>&1); then
+            echo "🔍 Summary Response: $summary_response"
+            echo "summary_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ PR summary generation failed: $summary_response"
+            echo "summary_success=false" >> $GITHUB_OUTPUT
+            # Don't fail the entire workflow, just log the error
+          fi
       
-      - name: Done
+      - name: Generate AI Code Review ➜ POST to backend
+        id: ai-review
+        # Only run on opened or synchronized (new code to review)
+        if: github.event.action == 'opened' || github.event.action == 'synchronize'
         run: |
-          echo "✅ PullQuest backend notified"
-          echo "✅ PR summary generated"
+          NUMBER=${{ github.event.pull_request.number }}
+          
+          echo "🤖 Generating AI code review for PR #$NUMBER"
+          
+          # Get the diff for the PR
+          DIFF_URL="${{ github.event.pull_request.diff_url }}"
+          
+          # Assemble review payload
+          review_payload=$(jq -n \
+            --arg owner  "${{ github.event.repository.owner.login }}" \
+            --arg repo   "${{ github.event.repository.name }}" \
+            --argjson prNumber "$NUMBER" \
+            --arg diffUrl "$DIFF_URL" \
+            '{owner:$owner, repo:$repo, prNumber:$prNumber, diff:""}')
+          
+          echo "📦 Review Payload:"
+          echo "$review_payload"
+          
+          # Make request with better error handling
+          if review_response=$(curl --fail --show-error --silent \
+            -X POST "$BACKEND_URL/api/github/ai-review" \
+            -H "Content-Type: application/json" \
+            --data-raw "$review_payload" \
+            -w '\nHTTP %{http_code}\n' 2>&1); then
+            echo "🔍 Review Response: $review_response"
+            echo "review_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ AI code review failed: $review_response"
+            echo "review_success=false" >> $GITHUB_OUTPUT
+            # Don't fail the entire workflow, just log the error
+          fi
+      
+      - name: Summary Report
+        run: |
+          echo "📊 Workflow Summary:"
+          echo "✅ PullQuest notification: ${{ steps.pullquest-notify.outputs.pullquest_success }}"
+          
+          if [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "reopened" ] || [ "${{ github.event.action }}" = "ready_for_review" ]; then
+            echo "✅ PR summary generation: ${{ steps.pr-summary.outputs.summary_success }}"
+          else
+            echo "⏭️ PR summary: Skipped (not needed for ${{ github.event.action }})"
+          fi
+          
+          if [ "${{ github.event.action }}" = "opened" ] || [ "${{ github.event.action }}" = "synchronize" ]; then
+            echo "✅ AI code review: ${{ steps.ai-review.outputs.review_success }}"
+          else
+            echo "⏭️ AI code review: Skipped (not needed for ${{ github.event.action }})"
+          fi
+          
+          echo "🎯 All operations completed!"
