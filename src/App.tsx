@@ -538,20 +538,7 @@ export default function App() {
                 <li>
                   <button className="hover:text-foreground transition-colors">Pricing</button>
                 </li>
-                <li>
-                  <button className="hover:text-foreground transition-colors">Documentation</button>
-                </li>
-                <li>
-                  <button className="hover:text-foreground transition-colors">API</button>
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-semibold mb-4">Company</h3>
-              <ul className="space-y-2 text-muted-foreground">
-                <li>
-                  <button className="hover:text-foreground transition-colors">About</button>
+       over:text-foreground transition-colors">About</button>
                 </li>
                 <li>
                   <button className="hover:text-foreground transition-colors">Blog</button>
