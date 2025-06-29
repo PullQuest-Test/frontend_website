@@ -1,0 +1,140 @@
+# .github/workflows/pr-summary-generator.yml
+name: 🤖 AI PR Summary Generator
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+
+jobs:
+  generate-pr-summary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      BACKEND_URL: https://pullquestgithubbackend.onrender.com
+    
+    steps:
+      - name: 📋 Debug PR Info
+        run: |
+          echo "🔍 PR #      : ${{ github.event.pull_request.number }}"
+          echo "🔍 Title     : ${{ github.event.pull_request.title }}"
+          echo "🔍 Author    : ${{ github.event.pull_request.user.login }}"
+          echo "🔍 Repo      : ${{ github.event.repository.full_name }}"
+          echo "🔍 Created   : ${{ github.event.pull_request.created_at }}"
+          echo "🔍 Base      : ${{ github.event.pull_request.base.ref }}"
+          echo "🔍 Head      : ${{ github.event.pull_request.head.ref }}"
+      
+      - name: 🤖 Generate AI Summary
+        id: ai-summary
+        run: |
+          NUMBER=${{ github.event.pull_request.number }}
+          TITLE="${{ github.event.pull_request.title }}"
+          DESCRIPTION="${{ github.event.pull_request.body || '' }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          
+          echo "📝 Generating AI-powered summary for PR #$NUMBER"
+          echo "👤 Author: $AUTHOR"
+          echo "📖 Title: $TITLE"
+          
+          # Assemble comprehensive summary payload
+          summary_payload=$(jq -n \
+            --arg owner  "${{ github.event.repository.owner.login }}" \
+            --arg repo   "${{ github.event.repository.name }}" \
+            --arg title  "$TITLE" \
+            --arg desc   "$DESCRIPTION" \
+            --arg author "$AUTHOR" \
+            --argjson prNumber "$NUMBER" \
+            --arg createdAt "${{ github.event.pull_request.created_at }}" \
+            --arg baseBranch "${{ github.event.pull_request.base.ref }}" \
+            --arg headBranch "${{ github.event.pull_request.head.ref }}" \
+            '{
+              owner: $owner, 
+              repo: $repo, 
+              prNumber: $prNumber, 
+              title: $title, 
+              description: $desc, 
+              author: $author,
+              metadata: {
+                createdAt: $createdAt,
+                baseBranch: $baseBranch,
+                headBranch: $headBranch
+              }
+            }')
+          
+          echo "📦 AI Summary Payload:"
+          echo "$summary_payload" | jq '.'
+          
+          # Send request to backend with enhanced error handling
+          echo "🚀 Sending request to backend..."
+          
+          if summary_response=$(curl --fail --show-error --silent --max-time 60 \
+            -X POST "$BACKEND_URL/api/github/generate-pr-summary" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Actions-PR-Summary/1.0" \
+            --data-raw "$summary_payload" \
+            -w '\n📊 HTTP Status: %{http_code}\n⏱️  Response Time: %{time_total}s\n' 2>&1); then
+            
+            echo "✅ AI Summary Generation Successful!"
+            echo "🔍 Backend Response:"
+            echo "$summary_response"
+            echo "ai_summary_success=true" >> $GITHUB_OUTPUT
+            
+          else
+            echo "❌ AI Summary Generation Failed!"
+            echo "🔍 Error Details:"
+            echo "$summary_response"
+            echo "ai_summary_success=false" >> $GITHUB_OUTPUT
+            
+            # Try to extract error details for debugging
+            if echo "$summary_response" | grep -q "HTTP"; then
+              HTTP_CODE=$(echo "$summary_response" | grep "HTTP" | grep -o '[0-9]*' | head -1)
+              echo "📊 HTTP Status Code: $HTTP_CODE"
+              echo "http_status_code=$HTTP_CODE" >> $GITHUB_OUTPUT
+            fi
+          fi
+      
+      - name: 📈 Summary Analytics
+        if: always()
+        run: |
+          echo "📊 PR Summary Generation Analytics:"
+          echo "🎯 Target PR: #${{ github.event.pull_request.number }}"
+          echo "👤 Author: ${{ github.event.pull_request.user.login }}"
+          echo "📝 Title Length: $(echo '${{ github.event.pull_request.title }}' | wc -c) characters"
+          echo "📄 Description Length: $(echo '${{ github.event.pull_request.body }}' | wc -c) characters"
+          echo "🤖 AI Generation Status: ${{ steps.ai-summary.outputs.ai_summary_success }}"
+          
+          if [ "${{ steps.ai-summary.outputs.ai_summary_success }}" = "true" ]; then
+            echo "✅ Summary successfully posted to PR #${{ github.event.pull_request.number }}"
+            echo "🔗 View PR: ${{ github.event.pull_request.html_url }}"
+          else
+            echo "❌ Summary generation failed for PR #${{ github.event.pull_request.number }}"
+            if [ -n "${{ steps.ai-summary.outputs.http_status_code }}" ]; then
+              echo "📊 HTTP Status: ${{ steps.ai-summary.outputs.http_status_code }}"
+            fi
+          fi
+      
+      - name: 🎯 Completion Report
+        run: |
+          echo "🎉 PR Summary Workflow Completed!"
+          echo "=================================="
+          echo "📋 Summary:"
+          echo "  • PR Number: #${{ github.event.pull_request.number }}"
+          echo "  • Repository: ${{ github.event.repository.full_name }}"
+          echo "  • Author: ${{ github.event.pull_request.user.login }}"
+          echo "  • AI Summary: ${{ steps.ai-summary.outputs.ai_summary_success }}"
+          echo "=================================="
+          
+          if [ "${{ steps.ai-summary.outputs.ai_summary_success }}" = "true" ]; then
+            echo "🚀 Next Steps:"
+            echo "  • Review the AI-generated summary in the PR comments"
+            echo "  • Validate the analysis accuracy"
+            echo "  • Use insights for code review process"
+          else
+            echo "🔧 Troubleshooting:"
+            echo "  • Check backend logs for detailed error information"
+            echo "  • Verify API key and endpoint availability"
+            echo "  • Consider manual summary generation if needed"
+          fi
+          
+          echo "🔗 PR Link: ${{ github.event.pull_request.html_url }}"
