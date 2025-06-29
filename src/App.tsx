@@ -29,6 +29,7 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [email, setEmail] = useState("")
+  const [isToggling, setIsToggling] = useState(false)
 
   // Theme management
   useEffect(() => {
@@ -41,7 +42,10 @@ export default function App() {
     }
   }, [])
 
-  const toggleTheme = () => {
+  const toggleTheme = async () => {
+    if (isToggling) return // Prevent rapid clicking
+
+    setIsToggling(true)
     const newTheme = !isDarkMode
     setIsDarkMode(newTheme)
 
@@ -52,6 +56,9 @@ export default function App() {
       document.documentElement.classList.remove("dark")
       localStorage.setItem("theme", "light")
     }
+
+    // Small delay to prevent rapid toggling
+    setTimeout(() => setIsToggling(false), 300)
   }
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen)
@@ -109,11 +116,19 @@ export default function App() {
           </nav>
 
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-9 w-9">
-              <Sun className={`h-4 w-4 transition-all ${isDarkMode ? "rotate-90 scale-0" : "rotate-0 scale-100"}`} />
-              <Moon
-                className={`absolute h-4 w-4 transition-all ${isDarkMode ? "rotate-0 scale-100" : "-rotate-90 scale-0"}`}
-              />
+            <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-9 w-9 relative overflow-hidden">
+              <div className="relative w-4 h-4">
+                <Sun
+                  className={`absolute inset-0 h-4 w-4 transition-all duration-300 ease-in-out ${
+                    isDarkMode ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100"
+                  }`}
+                />
+                <Moon
+                  className={`absolute inset-0 h-4 w-4 transition-all duration-300 ease-in-out ${
+                    isDarkMode ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-0 opacity-0"
+                  }`}
+                />
+              </div>
               <span className="sr-only">Toggle theme</span>
             </Button>
 
