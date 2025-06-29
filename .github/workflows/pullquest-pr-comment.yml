@@ -3,9 +3,6 @@ name: PullQuest – comment on PR activity
 
 on:
   pull_request:
-    # opened → first creation
-    # reopened / ready_for_review → drafts becoming ready
-    # synchronize → a new commit pushed to the PR
     types: [opened, reopened, ready_for_review, synchronize]
     branches: [main]
 
