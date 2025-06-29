@@ -96,44 +96,7 @@ jobs:
             echo "summary_success=false" >> $GITHUB_OUTPUT
             # Don't fail the entire workflow, just log the error
           fi
-      
-      - name: Generate AI Code Review ➜ POST to backend
-        id: ai-review
-        # Only run on opened or synchronized (new code to review)
-        if: github.event.action == 'opened' || github.event.action == 'synchronize'
-        run: |
-          NUMBER=${{ github.event.pull_request.number }}
           
-          echo "🤖 Generating AI code review for PR #$NUMBER"
-          
-          # Get the diff for the PR
-          DIFF_URL="${{ github.event.pull_request.diff_url }}"
-          
-          # Assemble review payload
-          review_payload=$(jq -n \
-            --arg owner  "${{ github.event.repository.owner.login }}" \
-            --arg repo   "${{ github.event.repository.name }}" \
-            --argjson prNumber "$NUMBER" \
-            --arg diffUrl "$DIFF_URL" \
-            '{owner:$owner, repo:$repo, prNumber:$prNumber, diff:""}')
-          
-          echo "📦 Review Payload:"
-          echo "$review_payload"
-          
-          # Make request with better error handling
-          if review_response=$(curl --fail --show-error --silent \
-            -X POST "$BACKEND_URL/api/github/ai-review" \
-            -H "Content-Type: application/json" \
-            --data-raw "$review_payload" \
-            -w '\nHTTP %{http_code}\n' 2>&1); then
-            echo "🔍 Review Response: $review_response"
-            echo "review_success=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ AI code review failed: $review_response"
-            echo "review_success=false" >> $GITHUB_OUTPUT
-            # Don't fail the entire workflow, just log the error
-          fi
-      
       - name: Summary Report
         run: |
           echo "📊 Workflow Summary:"
