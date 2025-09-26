@@ -1,9 +1,9 @@
 # .github/workflows/ai-pr-review.yml
-name: AI-powered PR Review
+name: AI PR Review
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]   # run for every new commit to an open PR
+    types: [opened, reopened, synchronize] # Run for new PRs and new commits to existing PRs
     branches: [main]
 
 jobs:
@@ -12,54 +12,38 @@ jobs:
 
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: write # Required for the backend to post comments
 
     env:
-      BACKEND_URL: https://pullquestgithubbackend.onrender.com   # ← your backend
+      BACKEND_URL: https://pullquestgithubbackend-1.onrender.com # Your backend URL
 
     steps:
-    # 1️⃣  Check out the PR branch (not the synthetic merge commit)
-    - name: Checkout PR code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      # This step is only needed to access the GitHub context variables.
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # 2️⃣  Capture the **real** head-commit SHA (not the merge SHA)
-    - name: Capture head commit SHA
-      id: head
-      run: |
-        echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # Build the simple JSON payload and send it to your backend.
+      - name: Trigger AI Full Review
+        run: |
+          # The payload only needs owner, repo, and prNumber.
+          # The backend will fetch the diff and other details itself.
+          payload=$(jq -n \
+            --arg owner    "${{ github.repository_owner }}" \
+            --arg repo     "${{ github.event.repository.name }}" \
+            --argjson prNumber "${{ github.event.pull_request.number }}" \
+            '{ owner: $owner,
+               repo: $repo,
+               prNumber: $prNumber }')
 
-    # 3️⃣  Compute a unified diff (base…HEAD)
-    - name: Compute PR diff
-      id: diff
-      run: |
-        git fetch origin ${{ github.event.pull_request.base.ref }}
-        git diff origin/${{ github.event.pull_request.base.ref }}...${{ steps.head.outputs.sha }} > diff.txt
+          echo "📦 Payload being sent to /api/hedera/full-review:"
+          echo "$payload"
 
-    # 4️⃣  Build JSON payload and send it to your backend
-    - name: Send diff to backend for AI review & comment
-      run: |
-        payload=$(jq -n \
-          --arg owner   "${{ github.repository_owner }}" \
-          --arg repo    "${{ github.event.repository.name }}" \
-          --argjson prNumber "${{ github.event.pull_request.number }}" \
-          --arg commitId "${{ steps.head.outputs.sha }}" \
-          --rawfile diff diff.txt \
-          '{ owner:$owner,
-             repo:$repo,
-             prNumber:$prNumber,
-             commitId:$commitId,
-             diff:$diff }')
-        echo "📦 Payload being sent:"
-        echo "$payload"
+          # Call the correct endpoint with the simplified payload.
+          curl --fail --show-error --silent \
+               -X POST "$BACKEND_URL/api/hedera/full-review" \
+               -H "Content-Type: application/json" \
+               --data-binary "$payload"
 
-        curl --fail --silent --show-error \
-             -X POST "$BACKEND_URL/api/ai-review" \
-             -H "Content-Type: application/json" \
-             --data-binary "$payload"
-
-
-    - name: Done
-      if: success()
-      run: echo "🎉 Workflow complete — AI review comment is present."
+      - name: Done
+        if: success()
+        run: echo "🎉 Workflow complete — AI review has been triggered."
