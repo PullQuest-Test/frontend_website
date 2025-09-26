@@ -69,4 +69,4 @@ export default tseslint.config([
 ```
 # frontend_website
 test is made dfbenatrncascvashvbjksav cfnmzfmdbz sgbsleuvgbaeilubgEUOI
-bdjkvbasdjhvbedhujb d zfm zfgm zg   
+bdjkvbasdjhvbedhujb d zfm zfgm zg   cvn bbdfbnbernetant
