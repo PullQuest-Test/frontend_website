@@ -1,71 +1,51 @@
-name: PullQuestAI Full Review
+# .github/workflows/ai-pr-review.yml
+name: AI PR Review with Hedera Rewards
 
 on:
-  issue_comment:
-    types: [created]
+  pull_request:
+    types: [opened, reopened, synchronize] # Run for new PRs and new commits to existing PRs
+    branches: [main]
 
 jobs:
-  handle-full-review:
-    # Only run on pull request comments
-    if: github.event.issue.pull_request
+  ai_review:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: write # Required for the backend to post comments
+
     env:
-      BACKEND_URL: https://pullquestgithubbackend.onrender.com
+      BACKEND_URL: https://pullquestgithubbackend-1.onrender.com # Your backend URL
 
     steps:
-    - name: Check if comment requests a full review
-      id: check-comment
-      run: |
-        comment_body="${{ github.event.comment.body }}"
-        if [[ "$comment_body" == *"@pullquestai full review"* ]]; then
-          echo "trigger_action=true" >> $GITHUB_OUTPUT
-          echo "✅ Full review request detected!"
-        else
-          echo "trigger_action=false" >> $GITHUB_OUTPUT
-          echo "ℹ️ Not a full review request, skipping..."
-        fi
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Debug – print extracted info
-      if: steps.check-comment.outputs.trigger_action == 'true'
-      run: |
-        echo "🔍 PR #       : ${{ github.event.issue.number }}"
-        echo "🔍 Requester  : ${{ github.event.comment.user.login }}"
-        echo "🔍 Repo       : ${{ github.event.repository.full_name }}"
+      # Build the JSON payload and send it to your backend.
+      - name: Trigger AI PR Review
+        run: |
+          # The payload needs owner, repo, prNumber, author, and the GITHUB_TOKEN.
+          payload=$(jq -n \
+            --arg owner    "${{ github.repository_owner }}" \
+            --arg repo     "${{ github.event.repository.name }}" \
+            --argjson prNumber "${{ github.event.pull_request.number }}" \
+            --arg author   "${{ github.event.pull_request.user.login }}" \
+            --arg githubToken "${{ secrets.GITHUB_TOKEN }}" \
+            '{ owner: $owner,
+               repo: $repo,
+               prNumber: $prNumber,
+               author: $author,
+               githubToken: $githubToken }')
 
-    - name: Build payload ➜ POST to backend
-      if: steps.check-comment.outputs.trigger_action == 'true'
-      run: |
-        PR_NUMBER=${{ github.event.issue.number }}
-        REQUESTER="${{ github.event.comment.user.login }}"
-        
-        # Assemble payload for a full review request
-        payload=$(jq -n \
-          --arg owner      "${{ github.event.repository.owner.login }}" \
-          --arg repo       "${{ github.event.repository.name }}" \
-          --arg requester  "$REQUESTER" \
-          --argjson prNumber "$PR_NUMBER" \
-          '{
-            owner: $owner,
-            repo: $repo, 
-            prNumber: $prNumber,
-            requester: $requester
-          }')
-        
-        echo "📦 Payload:"
-        echo "$payload"
-        
-        response=$(curl --fail --show-error --silent \
-          -X POST "$BACKEND_URL/api/chatgpt/full-review" \
-          -H "Content-Type: application/json" \
-          --data-raw "$payload" \
-          -w '\nHTTP %{http_code}\n' )
-        
-        echo "🔍 Response: $response"
+          echo "📦 Payload being sent to /api/hedera/ai-pr-review:"
+          echo "$payload" | jq 'del(.githubToken) | . + {githubToken: "REDACTED"}' # Avoid logging the token
 
-    - name: Done
-      if: steps.check-comment.outputs.trigger_action == 'true'
-      run: echo "✅ PullQuestAI backend notified for a full review"
+          # Call the correct endpoint with the required payload.
+          curl --fail --show-error --silent \
+               -X POST "$BACKEND_URL/api/hedera/ai-pr-review" \
+               -H "Content-Type: application/json" \
+               --data-binary "$payload"
+
+      - name: Done
+        if: success()
+        run: echo "🎉 Workflow complete — AI review has been triggered."
